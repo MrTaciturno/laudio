@@ -37,6 +37,71 @@
     let textoDimensoes = '';
     let textoNormal = '';
 
+    // Mapeamento para as pontuações por palavra falada
+    const pontuacoesPorPalavra = {
+      "vírgula": ",",
+      "virgula": ",",
+      "ponto e vírgula": ";",
+      "ponto final": ".",
+      "ponto": "."
+    };
+
+    // Função para transformar números em extenso (de 0 a 99, ou centenas simples)
+    function numeroPorExtensoPTBR(n) {
+      const unidades = ["zero","um","dois","três","quatro","cinco","seis","sete","oito","nove"];
+      const dezenas10 = ["dez","onze","doze","treze","quatorze","quinze","dezesseis","dezessete","dezoito","dezenove"];
+      const dezenas = ["","","vinte","trinta","quarenta","cinquenta","sessenta","setenta","oitenta","noventa"];
+      const centenas = ["cem","cento","duzentos","trezentos","quatrocentos","quinhentos","seiscentos","setecentos","oitocentos","novecentos"];
+      n = parseInt(n);
+      if (isNaN(n)) return "";
+      if (n < 10) return unidades[n];
+      if (n < 20) return dezenas10[n-10];
+      if (n < 100) {
+        let dez = Math.floor(n/10);
+        let uni = n % 10;
+        if (uni === 0) return dezenas[dez];
+        return dezenas[dez] + " e " + unidades[uni];
+      }
+      if (n === 100) return centenas[0];
+      if (n < 200) {
+        if (n % 100 === 0) {
+          return centenas[0];
+        }
+        return "cento e " + numeroPorExtensoPTBR(n - 100);
+      }
+      if (n < 1000) {
+        let cen = Math.floor(n/100);
+        let rest = n % 100;
+        if (rest === 0) return centenas[cen];
+        return centenas[cen] + " e " + numeroPorExtensoPTBR(rest);
+      }
+      // Números acima de 999 apenas valor numérico
+      return n;
+    }
+
+    function substituirPontuacoesEExtenso(texto) {
+      // Substituir palavras de pontuação (inclusive compostas) por sinais
+      // 1. Ponto e vírgula
+      texto = texto.replace(/\b(ponto e vírgula|ponto e virgula)\b/gi, ";");
+      // 2. Ponto final
+      texto = texto.replace(/\b(ponto final)\b/gi, ".");
+      // 3. Vírgula
+      texto = texto.replace(/\b(vírgula|virgula)\b/gi, ",");
+      // 4. Ponto (apenas como palavra isolada, não parte de "ponto e vírgula", etc)
+      texto = texto.replace(/\b(ponto)\b/gi, function(match, offset, str) {
+        // Não substitui "ponto" que já virou ponto final
+        // Verifica se já foi substituído
+        // Se houver ". " imediatamente antes, pula.
+        if (offset > 0 && (str[offset-1] === "." || str[offset-2] === ".")) return match;
+        return ".";
+      });
+      // Números por extenso
+      texto = texto.replace(/(\d+)/g, function(match) {
+        return match + " (" + numeroPorExtensoPTBR(match) + ")";
+      });
+      return texto;
+    }
+
     function comandoParar() {
       if (estaReconhecendo) {
         recognition.stop();
@@ -53,12 +118,10 @@
 
     function checarComandos(transcript) {
       const texto = transcript.trim().toUpperCase();
-
       if (texto === "PARAR" || texto.endsWith(" PARAR")) {
         comandoParar();
         return true; // comando foi acionado
       }
-
       return false;
     }
 
@@ -75,11 +138,12 @@
 
     function incluiTranscrito(texto, isFinal) {
       // função para distribuição do texto entre as caixas dependendo do modo
+      let textoProcessado = substituirPontuacoesEExtenso(texto);
       if (modoDimensoes) {
-        textoDimensoes += texto;
+        textoDimensoes += textoProcessado;
         caixaDimensoes.value = textoDimensoes;
       } else {
-        textoNormal += texto;
+        textoNormal += textoProcessado;
         caixaTexto.value = textoNormal;
       }
     }
@@ -130,21 +194,23 @@
             let pos = textoUp.indexOf("DIMENSÕES");
             let resto = transcript.substring(pos + "DIMENSÕES".length).trimStart();
             if (resto.length > 0) {
+              let restoProc = substituirPontuacoesEExtenso(resto + " ");
               if (isFinal) {
-                textoDimensoes += resto + " ";
+                textoDimensoes += restoProc;
                 caixaDimensoes.value = textoDimensoes;
               } else {
-                interimDimensoes += resto + " ";
+                interimDimensoes += restoProc;
               }
             }
             // O trecho antes de "dimensões" vai no texto normal, se houver
             let antes = transcript.substring(0, pos).trim();
             if (antes.length > 0) {
+              let antesProc = substituirPontuacoesEExtenso(antes + " ");
               if (isFinal) {
-                textoNormal += antes + " ";
+                textoNormal += antesProc;
                 caixaTexto.value = textoNormal;
               } else {
-                interimNormal += antes + " ";
+                interimNormal += antesProc;
               }
             }
             continue;
@@ -167,42 +233,46 @@
               let ateFim = transcript.substring(0, fimIdx).trimEnd();
               let aposFim = transcript.substring(fimIdx + comandoEncontrado.length).trimStart();
               if (ateFim.length > 0) {
+                let ateFimProc = substituirPontuacoesEExtenso(ateFim + " ");
                 if (isFinal) {
-                  textoDimensoes += ateFim + " ";
+                  textoDimensoes += ateFimProc;
                   caixaDimensoes.value = textoDimensoes;
                 } else {
-                  interimDimensoes += ateFim + " ";
+                  interimDimensoes += ateFimProc;
                 }
               }
               // sai do modo dimensões
               encerraModoDimensoes();
               if (aposFim.length > 0) {
+                let aposFimProc = substituirPontuacoesEExtenso(aposFim + " ");
                 if (isFinal) {
-                  textoNormal += aposFim + " ";
+                  textoNormal += aposFimProc;
                   caixaTexto.value = textoNormal;
                 } else {
-                  interimNormal += aposFim + " ";
+                  interimNormal += aposFimProc;
                 }
               }
               continue;
             } else {
               // Se não encontrou comando de fim, vai para dimensões
+              let trProc = substituirPontuacoesEExtenso(transcript + " ");
               if (isFinal) {
-                textoDimensoes += transcript + " ";
+                textoDimensoes += trProc;
                 caixaDimensoes.value = textoDimensoes;
               } else {
-                interimDimensoes += transcript + " ";
+                interimDimensoes += trProc;
               }
               continue;
             }
           }
 
           // Fora do modo dimensões: texto comum
+          let trProc = substituirPontuacoesEExtenso(transcript + " ");
           if (isFinal) {
-            textoNormal += transcript + " ";
+            textoNormal += trProc;
             caixaTexto.value = textoNormal;
           } else {
-            interimNormal += transcript + " ";
+            interimNormal += trProc;
           }
         }
         // Atualiza o texto das caixas de texto com interinos
