@@ -1,0 +1,62 @@
+<!DOCTYPE html>
+<html lang="pt-br">
+<head>
+  <meta charset="UTF-8">
+  <title>Reconhecimento de Áudio</title>
+</head>
+<body>
+  <h1>Reconhecimento de Áudio</h1>
+  <button id="start-btn">Iniciar Reconhecimento</button>
+  <button id="stop-btn" disabled>Parar</button>
+  <p id="resultado"></p>
+
+  <script>
+    const startBtn = document.getElementById('start-btn');
+    const stopBtn = document.getElementById('stop-btn');
+    const resultado = document.getElementById('resultado');
+
+    // Verifica compatibilidade
+    window.SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
+
+    if ('SpeechRecognition' in window) {
+      const recognition = new window.SpeechRecognition();
+      recognition.lang = 'pt-BR';
+      recognition.interimResults = false;
+      recognition.maxAlternatives = 1;
+
+      startBtn.onclick = function() {
+        recognition.start();
+        startBtn.disabled = true;
+        stopBtn.disabled = false;
+        resultado.textContent = "Ouvindo...";
+      };
+
+      stopBtn.onclick = function() {
+        recognition.stop();
+        startBtn.disabled = false;
+        stopBtn.disabled = true;
+      };
+
+      recognition.onresult = function(event) {
+        const transcript = event.results[0][0].transcript;
+        resultado.textContent = 'Você disse: ' + transcript;
+      };
+
+      recognition.onerror = function(event) {
+        resultado.textContent = 'Erro: ' + event.error;
+        startBtn.disabled = false;
+        stopBtn.disabled = true;
+      };
+
+      recognition.onend = function() {
+        startBtn.disabled = false;
+        stopBtn.disabled = true;
+      };
+    } else {
+      resultado.textContent = "Reconhecimento de voz não suportado neste navegador.";
+      startBtn.disabled = true;
+      stopBtn.disabled = true;
+    }
+  </script>
+</body>
+</html>
