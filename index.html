@@ -9,8 +9,14 @@
   <button id="start-btn">Iniciar Reconhecimento</button>
   <button id="stop-btn" disabled>Parar</button>
   <br><br>
+
   <label for="caixa-texto">Texto reconhecido:</label><br>
   <textarea id="caixa-texto" rows="5" cols="60" readonly></textarea>
+  <br><br>
+
+  <label for="caixa-dimensoes" style="display: block;">Texto (Dimensões):</label>
+  <textarea id="caixa-dimensoes" rows="3" cols="60" readonly style="background: #eef2fa"></textarea>
+
   <p id="resultado" style="display: none;"></p>
 
   <script>
@@ -18,43 +24,194 @@
     const stopBtn = document.getElementById('stop-btn');
     const resultado = document.getElementById('resultado');
     const caixaTexto = document.getElementById('caixa-texto');
+    const caixaDimensoes = document.getElementById('caixa-dimensoes');
 
     // Verifica compatibilidade
     window.SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
 
-    if ('SpeechRecognition' in window) {
-      const recognition = new window.SpeechRecognition();
-      recognition.lang = 'pt-BR';
-      recognition.interimResults = true; // Mudar para true para resultado em tempo real
-      recognition.maxAlternatives = 1;
+    let recognition = null;
+    let estaReconhecendo = false;
 
-      let textoFinal = '';
+    // Controle para modo de anotação de dimensões
+    let modoDimensoes = false;
+    let textoDimensoes = '';
+    let textoNormal = '';
+
+    function comandoParar() {
+      if (estaReconhecendo) {
+        recognition.stop();
+        estaReconhecendo = false;
+        startBtn.disabled = false;
+        stopBtn.disabled = true;
+      }
+    }
+
+    // comandos de parada do modo dimensões (incluindo singular e plural)
+    const comandosDimensoesFim = [
+      'FIM'
+    ];
+
+    function checarComandos(transcript) {
+      const texto = transcript.trim().toUpperCase();
+
+      if (texto === "PARAR" || texto.endsWith(" PARAR")) {
+        comandoParar();
+        return true; // comando foi acionado
+      }
+
+      return false;
+    }
+
+    function iniciaModoDimensoes() {
+      modoDimensoes = true;
+      textoDimensoes = '';
+      caixaDimensoes.value = '';
+    }
+
+    function encerraModoDimensoes() {
+      modoDimensoes = false;
+      // O texto já está em caixaDimensoes, nada adicional por enquanto
+    }
+
+    function incluiTranscrito(texto, isFinal) {
+      // função para distribuição do texto entre as caixas dependendo do modo
+      if (modoDimensoes) {
+        textoDimensoes += texto;
+        caixaDimensoes.value = textoDimensoes;
+      } else {
+        textoNormal += texto;
+        caixaTexto.value = textoNormal;
+      }
+    }
+
+    if ('SpeechRecognition' in window) {
+      recognition = new window.SpeechRecognition();
+      recognition.lang = 'pt-BR';
+      recognition.interimResults = true;
+      recognition.maxAlternatives = 1;
+      recognition.continuous = true;
 
       startBtn.onclick = function() {
-        recognition.start();
-        startBtn.disabled = true;
-        stopBtn.disabled = false;
-        caixaTexto.value = '';
-        textoFinal = '';
+        if (!estaReconhecendo) {
+          recognition.start();
+          estaReconhecendo = true;
+          startBtn.disabled = true;
+          stopBtn.disabled = false;
+          caixaTexto.value = '';
+          caixaDimensoes.value = '';
+          resultado.style.display = "none";
+          textoDimensoes = '';
+          textoNormal = '';
+          modoDimensoes = false;
+        }
       };
 
       stopBtn.onclick = function() {
-        recognition.stop();
-        startBtn.disabled = false;
-        stopBtn.disabled = true;
+        comandoParar();
       };
 
       recognition.onresult = function(event) {
-        let interimTranscript = '';
+        let interimNormal = '';
+        let interimDimensoes = '';
         for (let i = event.resultIndex; i < event.results.length; ++i) {
           let transcript = event.results[i][0].transcript;
-          if (event.results[i].isFinal) {
-            textoFinal += transcript;
+          let isFinal = event.results[i].isFinal;
+          let textoUp = transcript.trim().toUpperCase();
+
+          // Checar "PARAR"
+          if (isFinal && checarComandos(transcript)) {
+            continue;
+          }
+
+          // Identificar início do modo dimensões
+          if (!modoDimensoes && textoUp.includes("DIMENSÕES")) {
+            iniciaModoDimensoes();
+            // O trecho "dimensões" pode continuar algo após, já colocar o resto em dimensões se houver
+            let pos = textoUp.indexOf("DIMENSÕES");
+            let resto = transcript.substring(pos + "DIMENSÕES".length).trimStart();
+            if (resto.length > 0) {
+              if (isFinal) {
+                textoDimensoes += resto + " ";
+                caixaDimensoes.value = textoDimensoes;
+              } else {
+                interimDimensoes += resto + " ";
+              }
+            }
+            // O trecho antes de "dimensões" vai no texto normal, se houver
+            let antes = transcript.substring(0, pos).trim();
+            if (antes.length > 0) {
+              if (isFinal) {
+                textoNormal += antes + " ";
+                caixaTexto.value = textoNormal;
+              } else {
+                interimNormal += antes + " ";
+              }
+            }
+            continue;
+          }
+
+          // Se estamos no modo dimensões, procurar comandos de fim
+          if (modoDimensoes) {
+            // Se no resultado final há um comando de fim, encerra modo, o texto até o comando vai para caixa de dimensões, o resto volta ao texto normal
+            let fimIdx = -1;
+            let comandoEncontrado = "";
+            for (let cmd of comandosDimensoesFim) {
+              let idx = textoUp.indexOf(cmd);
+              if (idx !== -1 && (fimIdx === -1 || idx < fimIdx)) {
+                fimIdx = idx;
+                comandoEncontrado = cmd;
+              }
+            }
+            if (fimIdx !== -1) {
+              // textoDimensoes pega até o comando, texto normal o resto após comando
+              let ateFim = transcript.substring(0, fimIdx).trimEnd();
+              let aposFim = transcript.substring(fimIdx + comandoEncontrado.length).trimStart();
+              if (ateFim.length > 0) {
+                if (isFinal) {
+                  textoDimensoes += ateFim + " ";
+                  caixaDimensoes.value = textoDimensoes;
+                } else {
+                  interimDimensoes += ateFim + " ";
+                }
+              }
+              // sai do modo dimensões
+              encerraModoDimensoes();
+              if (aposFim.length > 0) {
+                if (isFinal) {
+                  textoNormal += aposFim + " ";
+                  caixaTexto.value = textoNormal;
+                } else {
+                  interimNormal += aposFim + " ";
+                }
+              }
+              continue;
+            } else {
+              // Se não encontrou comando de fim, vai para dimensões
+              if (isFinal) {
+                textoDimensoes += transcript + " ";
+                caixaDimensoes.value = textoDimensoes;
+              } else {
+                interimDimensoes += transcript + " ";
+              }
+              continue;
+            }
+          }
+
+          // Fora do modo dimensões: texto comum
+          if (isFinal) {
+            textoNormal += transcript + " ";
+            caixaTexto.value = textoNormal;
           } else {
-            interimTranscript += transcript;
+            interimNormal += transcript + " ";
           }
         }
-        caixaTexto.value = textoFinal + interimTranscript;
+        // Atualiza o texto das caixas de texto com interinos
+        if (!modoDimensoes && interimNormal) {
+          caixaTexto.value = textoNormal + interimNormal;
+        }
+        if (modoDimensoes && interimDimensoes) {
+          caixaDimensoes.value = textoDimensoes + interimDimensoes;
+        }
       };
 
       recognition.onerror = function(event) {
@@ -62,11 +219,19 @@
         resultado.textContent = 'Erro: ' + event.error;
         startBtn.disabled = false;
         stopBtn.disabled = true;
+        estaReconhecendo = false;
       };
 
       recognition.onend = function() {
-        startBtn.disabled = false;
-        stopBtn.disabled = true;
+        // Só reinicia se o usuário não tiver pedido para parar
+        if (estaReconhecendo) {
+          try {
+            recognition.start();
+          } catch (e) {}
+        } else {
+          startBtn.disabled = false;
+          stopBtn.disabled = true;
+        }
       };
     } else {
       resultado.style.display = "";
